@@ -1,0 +1,5 @@
+add_library(footbot_avoidance SHARED footbot_avoidance.h footbot_avoidance.cpp)
+target_link_libraries(footbot_avoidance
+  argos3core_simulator
+  argos3plugin_simulator_footbot
+  argos3plugin_simulator_genericrobot)
