@@ -150,8 +150,8 @@ void CFootBotConnectedmotion::ControlStep(){
                 
                 if (m_ConnectorIt==0) {
                         ++m_BackboneIt; // to be replaced by selection rule (use right triangle)
-                        ++m_ConnectorIt; // to be replaced by boolean flag
                 }
+                ++m_ConnectorIt; // to be replaced by boolean flag
                 
                 /* Motion rule : keep moving as long as the "connector" does not make a right angle with the
                  selected backbone robot (condition on angle or range)*/
