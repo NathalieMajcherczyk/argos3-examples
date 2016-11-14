@@ -26,18 +26,46 @@
 #include <argos3/plugins/robots/generic/control_interface/ci_range_and_bearing_sensor.h>
 /* Definition of the light sensor class */
 #include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_light_sensor.h>
+/* Definition of the camera sensor */
+#include <argos3/plugins/robots/generic/control_interface/ci_colored_blob_omnidirectional_camera_sensor.h>
 /* 2D vector definition */
 #include <argos3/core/utility/math/vector2.h>
-
-
+/* Color definition*/
+#include <argos3/core/utility/datatypes/color.h>
 
 using namespace argos;
 
-class CFootBotConnectedmotion : public CCI_Controller {
+class CFootBotConnectedMotion : public CCI_Controller {
     
 
 public:
     
+    struct STreeData {
+        UInt8 LevelWkr;
+        UInt8 LevelCntr;
+        UInt8 LevelBkb;
+        CVector2 InfoNewNode;
+        bool bAlreadyIdle;
+        void Init();
+    };
+    
+
+    
+//    struct SSwarmParams {
+//       
+//        int NumberWkrs;
+//        int MaxCntrs;
+//        int NumberBkbs;
+//        
+//        int WkrMaxId;
+//        int CntrMinId;
+//        int CntrMaxId;
+//        int BkbMinId;
+//        int BkbMaxId;
+//        
+//        void Init(TConfigurationNode& t_tree);
+//    };
+
     /*
      * The following variables are used as parameters for
      * turning during navigation.
@@ -65,32 +93,34 @@ public:
         
         void Init(TConfigurationNode& t_tree);
     };
-
+    
 public:
     
-    const static int MAX_SIZE = 10;
+    const static int MAX_SIZE = 50; //remove and replace by pointers
     
     /*Variables used for communication between robots*/
     
-    struct CPacket {
+    struct SCommPacket {
         
-        UInt8 id[MAX_SIZE];
-        bool idle[MAX_SIZE];
-        Real range[MAX_SIZE];
-        CRadians* angle;
-        size_t size;
+        UInt8 Id[MAX_SIZE];
+        bool Idle[MAX_SIZE];
+        UInt8 Level[MAX_SIZE];
+        bool CommON;
+        Real Range[MAX_SIZE];
+        CRadians* Angle;
+        size_t Size;
         
-        CPacket();
-        ~CPacket();
+        SCommPacket();
+        ~SCommPacket();
     };
     
 public:
     
     /* Class constructor. */
-    CFootBotConnectedmotion();
+    CFootBotConnectedMotion();
     
     /* Class destructor. */
-    virtual ~CFootBotConnectedmotion() {
+    virtual ~CFootBotConnectedMotion() {
     }
     
     /*
@@ -108,21 +138,44 @@ public:
      * Init().
      * It is called when you press the reset button in the GUI.
      */
-    virtual void Reset() {}
+    virtual void Reset();
     
     /*
      * Called to cleanup what done by Init() when the experiment finishes.
      */
     virtual void Destroy();
     
+    typedef std::vector< std::pair <int, int> > TPairVector;
+    
+    /*
+     * Returns the son-parent pairs
+     */
+    TPairVector inline & GetParentSonId (){
+        return m_tParentSonId;
+    }
+    /*
+     * Returns
+     */
+    STreeData inline & GetTreeData(){
+        return m_sTreeData;
+    }
+    
+    /*
+     * Deletes son-parent pairs
+     */
+    virtual void DeleteParentSonId (); //needed ?
+    
+    
 protected:
+    
+    void DoTask(int n_Id);
     
     /*
      * Calculates the vector to the closest light.
      */
-    virtual CVector2 VectorToLight();
+    virtual CVector2 VectorToBlob(CColor c_color);
     
-    virtual CVector2 AdjustmentVector(Real range1, Real range2, CRadians angle1, CRadians angle2);
+    virtual CVector2 AdjustmentVector(std::vector<Real> f_range,std::vector<CRadians> c_angle);
     
     /*
      * Gets a direction vector as input and transforms it into wheel actuation.
@@ -141,14 +194,19 @@ private:
     CCI_FootBotLightSensor* m_pcLight;
     /* The turning parameters. */
     SWheelTurningParams m_sWheelTurningParams;
-
     
-    bool m_RobotIdle;
-    void Emit(UInt8 t_id,bool Idle);
-    int m_BackboneIt;
-    int m_ConnectorIt;
-    CPacket Receive(); // not sure if needed
+//    /* The swarm parameters. */
+//    SSwarmParams m_sSwarmParams;
 
+    /* Pointer to the omnidirectional camera sensor */
+    CCI_ColoredBlobOmnidirectionalCameraSensor* m_pcCamera;
+    
+    bool m_bRobotIdle;
+    TPairVector m_tParentSonId;
+    STreeData m_sTreeData;
+    
+    void Emit(UInt8 un_id,bool b_idle, UInt8 un_level);
+    SCommPacket Receive();
     
 };
 
