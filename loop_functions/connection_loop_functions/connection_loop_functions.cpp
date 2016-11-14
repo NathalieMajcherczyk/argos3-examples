@@ -115,6 +115,8 @@ void CConnectionLoopFunctions::PostStep() {
             /* Add the footbot to the space */
             AddEntity(*m_pcNode);
             cController.GetTreeData().InfoNewNode=CVector2(0,0);
+            cController.GetTreeData().bAlreadyIdle=false;
+
             
             if (cFootBot.GetId().find("wkr") != std::string::npos) {
                 m_tNewLevels.push_back(std::make_pair(oss.str(),(cController.GetTreeData().LevelWkr-1)));

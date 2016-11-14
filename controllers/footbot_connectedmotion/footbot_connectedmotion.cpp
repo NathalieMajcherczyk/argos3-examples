@@ -149,7 +149,7 @@ void CFootBotConnectedMotion::ControlStep(){
         if (cCommunication.CommON) {
             /* Find new Parent by looking for minimum range with nodes one level below (level root=0) */
             for(size_t i=0; i<size;++i){
-                if (cCommunication.Level[i]==(m_sTreeData.LevelWkr-1)) {
+                if (cCommunication.Level[i]<=(m_sTreeData.LevelWkr-1)) {
                     if (nCountParent==0) {
                         nMinIndex=i;
                         ++nCountParent;
@@ -239,7 +239,7 @@ void CFootBotConnectedMotion::ControlStep(){
                     }
                 }
                 /* Find new Parent by looking for minimum range with nodes one level below (level root=0) */
-                if (cCommunication.Level[i]==(m_sTreeData.LevelCntr-1)){
+                if (cCommunication.Level[i]<=(m_sTreeData.LevelCntr-1)){
                     if (nCountParent==0) {
                         nMinIndex=i;
                         ++nCountParent;
@@ -271,21 +271,19 @@ void CFootBotConnectedMotion::ControlStep(){
                 if(!m_sTreeData.bAlreadyIdle){
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
-                    ++m_sTreeData.LevelWkr;
-                    LOG<<m_sTreeData.LevelWkr<<std::endl;
+                    ++m_sTreeData.LevelCntr;
                     if (cCommunication.Range[nMinIndex]>=90){//enough?
                         CVector2 temp;
                         temp.FromPolarCoordinates(cCommunication.Range[nMinIndex],cCommunication.Angle[nMinIndex]);
                         m_sTreeData.InfoNewNode=temp;
-                        LOG<<"New Entity"<<std::endl;
                     }
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.LevelWkr);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.LevelCntr);
                     m_sTreeData.bAlreadyIdle=true;
                 }
                 else {
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.LevelWkr);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.LevelCntr);
                     m_sTreeData.bAlreadyIdle=false;
                 }
             }
@@ -296,7 +294,6 @@ void CFootBotConnectedMotion::ControlStep(){
             Emit(nCurrentId,m_bRobotIdle,m_sTreeData.LevelCntr);
         }
     }
-    
     
     else if(strRobotId.find("fb") != std::string::npos){
         Emit(std::stoi(&strRobotId[2]),false,m_sTreeData.LevelBkb); //checks to be added ?
