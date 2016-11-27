@@ -35,37 +35,33 @@
 
 using namespace argos;
 
+// Okay to use const here ?
+const Real STRETCH_THRESHOLD = 90;
+const Real PULL_THRESHOLD = 30;
+const int NUMBER_OF_TASKS = 6; // set a as parameters
+
 class CFootBotConnectedMotion : public CCI_Controller {
     
-
 public:
     
     struct STreeData {
-        UInt8 LevelWkr;
-        UInt8 LevelCntr;
-        UInt8 LevelBkb;
-        CVector2 InfoNewNode;
-        bool bAlreadyIdle;
+        UInt8 Level;
+        UInt8 NextLevel;
+        bool IsLeaf;
+        bool IsRoot;
+        bool AlreadyIdle;
+        
+        CVector2 StretchedRangeAngle; // Range and angle between nodes stretched more than the allowed range
+        
+        /* Default Constructor */
+        STreeData(): Level(0), NextLevel(0), AlreadyIdle(false), IsLeaf(false), IsRoot(false) {}
+        
+        /* Constructor */
+        STreeData(UInt8 Level, UInt8 NextLevel, bool AlreadyIdle, bool IsLeaf, bool IsRoot): Level(Level), NextLevel(NextLevel), AlreadyIdle(AlreadyIdle), IsLeaf(IsLeaf), IsRoot(IsRoot) {}
+        
         void Init();
     };
     
-
-    
-//    struct SSwarmParams {
-//       
-//        int NumberWkrs;
-//        int MaxCntrs;
-//        int NumberBkbs;
-//        
-//        int WkrMaxId;
-//        int CntrMinId;
-//        int CntrMaxId;
-//        int BkbMinId;
-//        int BkbMaxId;
-//        
-//        void Init(TConfigurationNode& t_tree);
-//    };
-
     /*
      * The following variables are used as parameters for
      * turning during navigation.
@@ -147,39 +143,39 @@ public:
     
     typedef std::vector< std::pair <int, int> > TPairVector;
     
-    /*
-     * Returns the son-parent pairs
-     */
+    /* Getter functions */
+    
+    /* Returns son-parent pairs */
     TPairVector inline & GetParentSonId (){
         return m_tParentSonId;
     }
-    /*
-     * Returns
-     */
+    /* Returns tree data */
     STreeData inline & GetTreeData(){
         return m_sTreeData;
     }
+    /* Returns tree start flag */
+    bool inline & GetStartTree(){
+        return m_bStartTree;
+    }
     
-    /*
-     * Deletes son-parent pairs
-     */
+    /* Deletes son-parent pairs */
     virtual void DeleteParentSonId (); //needed ?
-    
-    
+
 protected:
     
-    void DoTask(int n_Id);
+    /* Calculates the vector to the task */
+    virtual CVector2 VectorToTask(int n_Id);
     
-    /*
-     * Calculates the vector to the closest light.
-     */
+    /* Calculates the vector to the closest light */
+    virtual CVector2 VectorToLight();
+    
+    /* Calculates the vector to blob of specified color */
     virtual CVector2 VectorToBlob(CColor c_color);
     
-    virtual CVector2 AdjustmentVector(std::vector<Real> f_range,std::vector<CRadians> c_angle);
+    /* Calculates a normalized resulting vector */
+    virtual CVector2 AdjustmentVector(std::vector<Real> f_range,std::vector<CRadians> c_angle); // pass by const ref !!
     
-    /*
-     * Gets a direction vector as input and transforms it into wheel actuation.
-     */
+    /* Gets a direction vector as input and transforms it into wheel actuation. */
     void SetWheelSpeedsFromVector(const CVector2& c_heading);
     
 private:
@@ -194,14 +190,13 @@ private:
     CCI_FootBotLightSensor* m_pcLight;
     /* The turning parameters. */
     SWheelTurningParams m_sWheelTurningParams;
-    
-//    /* The swarm parameters. */
-//    SSwarmParams m_sSwarmParams;
 
     /* Pointer to the omnidirectional camera sensor */
     CCI_ColoredBlobOmnidirectionalCameraSensor* m_pcCamera;
     
     bool m_bRobotIdle;
+    bool m_bStartTree;
+    int m_nClock;
     TPairVector m_tParentSonId;
     STreeData m_sTreeData;
     

@@ -4,12 +4,23 @@
 #include <argos3/core/simulator/loop_functions.h>
 #include <controllers/footbot_connectedmotion/footbot_connectedmotion.h>
 #include <argos3/plugins/robots/foot-bot/simulator/footbot_entity.h>
-//#include <argos3/plugins/robots/generic/control_interface/ci_proximity_sensor.h>
+
+#define PI 3.1415927
 
 using namespace argos;
 
 class CConnectionLoopFunctions : public CLoopFunctions {
 
+public:
+
+    struct SNode {
+        std::string id;
+        int level;
+        bool IsLeaf;
+        bool IsRoot;
+        SNode(std::string id, int level, bool IsLeaf, bool IsRoot): id(id), level(level), IsLeaf(IsLeaf), IsRoot(IsRoot) {}
+    };
+    
 public:
     
     CConnectionLoopFunctions();
@@ -27,8 +38,8 @@ private:
     CFootBotEntity* m_pcNode;
     int m_nNodeCounter;
     int m_nNumberSpares;
-    typedef std::vector< std::pair <std::string, int> > TVecPair;
-    TVecPair m_tNewLevels;
+    typedef std::vector< SNode > TVecNode;
+    TVecNode m_tLevels;
     
 };
 
