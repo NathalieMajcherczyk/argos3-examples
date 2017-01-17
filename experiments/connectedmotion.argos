@@ -70,42 +70,42 @@
       <light id="light_0"
       position="2,0,0"
       orientation="0,0,0"
-      color="purple"
+      color="yellow"
       intensity="10.0"
       medium="leds" />
       
       <light id="light_1"
-      position="0,2,0"
+      position="-2,0,0"
+      orientation="0,0,0"
+      color="green"
+      intensity="10.0"
+      medium="leds" />
+      
+      <light id="light_2"
+      position="1,1,0"
       orientation="0,0,0"
       color="red"
       intensity="10.0"
       medium="leds" />
       
-      <light id="light_2"
-      position="1.8,1.8,0"
-      orientation="0,0,0"
-      color="yellow"
-      intensity="10.0"
-      medium="leds" />
-      
       <light id="light_3"
-      position="0,-2,0"
+      position="1,-1,0"
       orientation="0,0,0"
-      color="white"
+      color="purple"
       intensity="10.0"
       medium="leds" />
       
       <light id="light_4"
-      position="-2,0,0"
+      position="-1,1,0"
       orientation="0,0,0"
       color="blue"
       intensity="10.0"
       medium="leds" />
       
       <light id="light_5"
-      position="-1.8,-1.8,0"
+      position="-1,-1,0"
       orientation="0,0,0"
-      color="green"
+      color="white"
       intensity="10.0"
       medium="leds" />
 
@@ -136,7 +136,10 @@
   <!-- * Visualization * -->
   <!-- ****************** -->
   <visualization>
-      <qt-opengl />
+      <qt-opengl>
+          <user_functions library="build/loop_functions/id_loop_functions/libid_loop_functions"
+          label="id_qtuser_functions" />
+      </qt-opengl>
   </visualization>
 
 </argos-configuration>

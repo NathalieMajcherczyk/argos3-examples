@@ -5,6 +5,9 @@
 #include <controllers/footbot_connectedmotion/footbot_connectedmotion.h>
 #include <argos3/core/utility/logging/argos_log.h>
 #include <sstream>
+#include <argos3/core/utility/math/vector3.h>
+#include <argos3/core/utility/math/quaternion.h>
+#include <argos3/core/utility/math/angles.h>
 //#include <argos3/src/plugins/simulator/visualizations/qt-opengl/qtopengl_user_functions.cpp>
 
 
@@ -64,8 +67,8 @@ void CConnectionLoopFunctions::PreStep() {
                 cController.GetTreeData().IsLeaf=it1->IsLeaf;
                 cController.GetTreeData().IsRoot=it1->IsRoot;
                 
-                LOG<<it1->id<<std::endl;
-                LOG<<it1->level<<std::endl;
+                //LOG<<it1->id<<std::endl;
+                //LOG<<it1->level<<std::endl;
             }
         }
     }
@@ -78,6 +81,7 @@ void CConnectionLoopFunctions::PreStep() {
 void CConnectionLoopFunctions::PostStep() {
     
     CSpace::TMapPerType& m_cFootbots = GetSpace().GetEntitiesByType("foot-bot");
+    bool bAddedRobots=false;
     
     for(CSpace::TMapPerType::iterator it = m_cFootbots.begin(); it != m_cFootbots.end(); ++it) {
         
@@ -86,84 +90,111 @@ void CConnectionLoopFunctions::PostStep() {
         CFootBotConnectedMotion& cController = dynamic_cast<CFootBotConnectedMotion&>(cFootBot.GetControllableEntity().GetController());
         
         CFootBotConnectedMotion::TPairVector& vecTree = cController.GetParentSonId();
+        int tempId;
         
         /* Display tree nodes (Parent id and son id)*/
         for (CFootBotConnectedMotion::TPairVector::iterator itt=vecTree.begin(); itt!= vecTree.end(); ++itt) {
-            LOG<<"Parent:"<<itt->first<<std::endl;
-            LOG<<"Son:"<<itt->second<<std::endl;
+            //LOG<<"Parent:"<<itt->first<<std::endl;
+            //LOG<<"Son:"<<itt->second<<std::endl;
+            tempId=itt->second;
         }
         vecTree.clear();
 
-        if (cController.GetTreeData().StretchedRangeAngle!=CVector2(0,0) && m_nNodeCounter<m_nNumberSpares) {
+        if (cController.GetTreeData().StretchedRangeAngle!=CVector2() && m_nNodeCounter<m_nNumberSpares) {
             
             /* Create robot ID */
             std::ostringstream strId;
             strId << "fb" << m_nNodeCounter;
-            ++m_nNodeCounter;
             
-            /**/
-            Real fOldX=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetX();
-            Real fOldY=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetY();
-            /**/
             CRadians cTheta, cY, cX;
             CQuaternion cTemp=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Orientation;
             cTemp.ToEulerAngles(cTheta,cY,cX);
             
-            /**/
-            Real fNewX=fOldX + cController.GetTreeData().StretchedRangeAngle.Length()*Cos(cTheta+cController.GetTreeData().StretchedRangeAngle.Angle())/200;
-            Real fNewY=fOldY + cController.GetTreeData().StretchedRangeAngle.Length()*Sin(cTheta+cController.GetTreeData().StretchedRangeAngle.Angle())/200;
-            CVector3 cPosition=CVector3(fNewX,fNewY,0);
+            /* Get absolute position of parent */
+            CVector3 cOldPosition=CVector3(cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetX(),cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetY(),cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetZ());
+            
+            /* Compute absolute position of new robot */
+            CVector3 cNewPosition=cOldPosition+(CVector3(cController.GetTreeData().StretchedRangeAngle.Length()/200,0,0).RotateZ(cTheta+cController.GetTreeData().StretchedRangeAngle.Angle()));
+            
+            DEBUG(",X: %f , Y: %f , Old: %i , New: %i , Level : %i \n",cNewPosition.GetX(),cNewPosition.GetY(),tempId,m_nNodeCounter,cController.GetTreeData().Level-1);
 
+            ++m_nNodeCounter;
+            
             m_pcNode = new CFootBotEntity(strId.str(),              // the id
                                           "fdc",                //controller id
-                                          cPosition,       // the position in m
-                                          CQuaternion(0,0,0,0),         // the orientation
-                                          Real(1),                  // rab range
+                                          cNewPosition,       // the position in m
+                                          cTemp,         // the orientation  // or find a way to add Angle
+                                          1.0,                  // rab range
                                           10,                       //
                                           ToRadians(CDegrees(80.0f)));   // omnicam aperture
             /* Add the footbot to the space */
             AddEntity(*m_pcNode);
             
             /* Update tree data for parent footbot*/
-            cController.GetTreeData().StretchedRangeAngle=CVector2(0,0);
-            cController.GetTreeData().AlreadyIdle=false; // needed ? cfr constructor
-            
+            cController.GetTreeData().StretchedRangeAngle=CVector2(); // use setter function
+            cController.GetTreeData().AlreadyIdle=false; // use setter function
             m_tLevels.push_back(SNode(strId.str(),(cController.GetTreeData().Level-1),false,false));
+            bAddedRobots=true;
         }
         else if (m_nNodeCounter>=m_nNumberSpares) {
             LOG<<"Out of spare robots"<<std::endl;
         }
         else if (cController.GetStartTree()) {
+            
+            /* Get absolute position of root */
+            CVector3 cRoot(cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetX(),cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetY(),cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetZ());
+            /* Choose deployment vector from root*/
+            CVector3 cDeployment(STRETCH_THRESHOLD/200,0,0);
+            CRadians cAngle(2*ARGOS_PI/NUMBER_OF_TASKS);
+            CQuaternion cTheta=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Orientation;
+            CRadians cY(0);
+            CRadians cX(0);
+            
             for (int i=0; i<NUMBER_OF_TASKS; ++i) {
+                
                 /* Create robot ID */
                 std::ostringstream strId;
                 strId << "fb" << m_nNodeCounter;
                 ++m_nNodeCounter;
                 
-                /* */
-                Real fOldX=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetX();
-                Real fOldY=cFootBot.GetEmbodiedEntity().GetOriginAnchor().Position.GetY();
-                //rotate CVector2
+                /* Compute absolute position of new robot */
+                CVector3 cPosition = cRoot + cDeployment;
+                CQuaternion cTemp2;
+                cTemp2.FromEulerAngles(cAngle*i,cY,cX);
+                cTheta*=cTemp2;
                 
-                /* */
-                Real fNewX= fOldX + (STRETCH_THRESHOLD/200)*cos(2*PI/NUMBER_OF_TASKS*(i+1));
-                Real fNewY= fOldY + (STRETCH_THRESHOLD/200)*sin(2*PI/NUMBER_OF_TASKS*(i+1));
-                CVector3 cPosition=CVector3(fNewX,fNewY,0);
+                //DEBUG(",X: %f , Y: %f \n",fNewX,fNewY);
                 
                 m_pcNode = new CFootBotEntity(strId.str(),              // the id
                                               "fdc",                //controller id
                                               cPosition,       // the position in m
-                                              CQuaternion(0,0,0,0),     // the orientation
-                                              Real(1),                  // rab range
+                                              cTheta,           // the orientation (//CQuaternion(),)
+                                              1.0,                  // rab range
                                               10,                       //
                                               ToRadians(CDegrees(80.0f)));   // omnicam aperture
+
+                
+                /* Rotate deployment vector*/
+                cDeployment.RotateZ(cAngle);
+                
                 /* Add the footbot to the space */
                 AddEntity(*m_pcNode);
                 m_tLevels.push_back(SNode(strId.str(),(cController.GetTreeData().Level+1),true,false));
             }
-            cController.GetStartTree()=false;
+            cController.GetStartTree()=false; // Use setter functions
+            bAddedRobots=true;
         }
     }
+    
+    /* Set flag for waiting one time step */
+    if (bAddedRobots) {
+        for(CSpace::TMapPerType::iterator it = m_cFootbots.begin(); it != m_cFootbots.end(); ++it){
+            CFootBotEntity& cFootBot = *any_cast<CFootBotEntity*>(it->second);
+            CFootBotConnectedMotion& cController = dynamic_cast<CFootBotConnectedMotion&>(cFootBot.GetControllableEntity().GetController());
+            cController.SetWaitStep(true);
+        }
+    }
+    
 }
 
 //            if (GetSpace().GetSimulationClock()==2) {

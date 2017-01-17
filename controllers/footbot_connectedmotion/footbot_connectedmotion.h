@@ -37,8 +37,8 @@ using namespace argos;
 
 // Okay to use const here ?
 const Real STRETCH_THRESHOLD = 90;
-const Real PULL_THRESHOLD = 30;
-const int NUMBER_OF_TASKS = 6; // set a as parameters
+const Real PULL_THRESHOLD = 40;
+const Real NUMBER_OF_TASKS = 6; // set a as parameters
 
 class CFootBotConnectedMotion : public CCI_Controller {
     
@@ -50,7 +50,6 @@ public:
         bool IsLeaf;
         bool IsRoot;
         bool AlreadyIdle;
-        
         CVector2 StretchedRangeAngle; // Range and angle between nodes stretched more than the allowed range
         
         /* Default Constructor */
@@ -92,19 +91,26 @@ public:
     
 public:
     
-    const static int MAX_SIZE = 50; //remove and replace by pointers
+//    struct MatchId {
+//        MatchId(const UInt8& id): _id(id) {}
+//        bool operator()(const SCommPacket& obj) const
+//        {
+//            return obj. == _id;
+//        }
+//        private :
+//            const UInt8& _id;
+//    };
     
     /*Variables used for communication between robots*/
     
     struct SCommPacket {
         
-        UInt8 Id[MAX_SIZE];
-        bool Idle[MAX_SIZE];
-        UInt8 Level[MAX_SIZE];
-        bool CommON;
-        Real Range[MAX_SIZE];
-        CRadians* Angle;
-        size_t Size;
+        UInt8 Id;
+        bool Idle;
+        UInt8 Level;
+        UInt8 NextLevel;
+        Real Range;
+        CRadians Angle;
         
         SCommPacket();
         ~SCommPacket();
@@ -142,6 +148,7 @@ public:
     virtual void Destroy();
     
     typedef std::vector< std::pair <int, int> > TPairVector;
+    typedef std::vector<SCommPacket> TCommReadings;
     
     /* Getter functions */
     
@@ -153,9 +160,16 @@ public:
     STreeData inline & GetTreeData(){
         return m_sTreeData;
     }
+    
     /* Returns tree start flag */
     bool inline & GetStartTree(){
         return m_bStartTree;
+    }
+    
+    /* Set wait step flag */
+    
+    void inline SetWaitStep(bool b_wait){
+        m_bWaitStep=b_wait;
     }
     
     /* Deletes son-parent pairs */
@@ -194,14 +208,23 @@ private:
     /* Pointer to the omnidirectional camera sensor */
     CCI_ColoredBlobOmnidirectionalCameraSensor* m_pcCamera;
     
+    /* Robot status variable */
     bool m_bRobotIdle;
+    
+    /* Flag to skip a step after having added*/ //make it a global variable ?
+    bool m_bWaitStep;
+    
+    /* Variables for tree reconfiguration*/
+    bool m_bRefreshDone;
     bool m_bStartTree;
+    int m_nRefreshLayer;
     int m_nClock;
+    
     TPairVector m_tParentSonId;
     STreeData m_sTreeData;
     
-    void Emit(UInt8 un_id,bool b_idle, UInt8 un_level);
-    SCommPacket Receive();
+    void Emit(UInt8 un_id,bool b_idle, UInt8 un_level, UInt8 un_NextLevel);
+    TCommReadings Receive(const std::string& str_RobotId, bool& b_CommON);
     
 };
 

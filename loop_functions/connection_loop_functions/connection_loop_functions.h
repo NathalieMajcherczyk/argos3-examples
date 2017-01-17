@@ -5,7 +5,7 @@
 #include <controllers/footbot_connectedmotion/footbot_connectedmotion.h>
 #include <argos3/plugins/robots/foot-bot/simulator/footbot_entity.h>
 
-#define PI 3.1415927
+//#define PI 3.14159265359
 
 using namespace argos;
 

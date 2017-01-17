@@ -5,7 +5,6 @@
 /* Logging */
 #include <argos3/core/utility/logging/argos_log.h>
 
-//lamport clock
 
 /****************************************/
 /****************************************/
@@ -14,8 +13,9 @@ void CFootBotConnectedMotion::STreeData::Init() {
     Level=0;
     NextLevel=0;
     AlreadyIdle=false;
-    IsLeaf=false; // first node should only be considered as root
+    IsLeaf=false; // first node only should be considered as root
     IsRoot=true;
+    StretchedRangeAngle=CVector2();
 }
 
 /****************************************/
@@ -42,15 +42,14 @@ void CFootBotConnectedMotion::SWheelTurningParams::Init(TConfigurationNode& t_no
 /****************************************/
 
 CFootBotConnectedMotion::SCommPacket::SCommPacket() {
-    Angle=new CRadians[MAX_SIZE];
+    //Angle=new CRadians[MAX_SIZE];
 }
 
 /****************************************/
 /****************************************/
 
 CFootBotConnectedMotion::SCommPacket::~SCommPacket() {
- //   delete [] Angle;
-    ;
+    //delete [] Angle;
 }
 
 /****************************************/
@@ -64,7 +63,11 @@ CFootBotConnectedMotion::CFootBotConnectedMotion() :
     m_pcLight(NULL)
     {
         m_bRobotIdle=false;
+        m_bWaitStep=false;
+        
         m_bStartTree=false;
+        m_bRefreshDone=true;
+        m_nRefreshLayer=0;
         m_nClock=1;
     }
 
@@ -116,161 +119,177 @@ void CFootBotConnectedMotion::DeleteParentSonId(){
 void CFootBotConnectedMotion::ControlStep(){
     
     const std::string& strRobotId=GetId();
-    //LOG<<strRobotId<<std::endl;
-    int nCurrentId=std::stoi(&strRobotId[2]);
+    int nCurrentId = FromString<int>(strRobotId.substr(2));
     
+    /* Refresh Routine */
+    //if (m_sTreeData.Level==m_nRefreshLayer) {
+    //    ++m_nRefreshLayer;
+    //}
+    
+    /* Leaf Routine */
     if(m_sTreeData.IsLeaf){
-        LOG<<"Leaf:"<<strRobotId<<std::endl;
+        
         int nCountParent=0;
-        int nMinIndex=0;
         int nParentId=0;
+        TCommReadings::iterator ptrParent;
         std::vector<Real> vecRanges;
         std::vector<CRadians> vecAngles;
         
         /* Get readings from RAB*/
-        SCommPacket cCommunication=Receive();
-        size_t size=cCommunication.Size;
+        bool bCommON=true;
+        TCommReadings cCommunication=Receive(strRobotId,bCommON);
         
         /* Act based on readings */
-        if (cCommunication.CommON) {
-            
-            
-            for(size_t i=0; i<size;++i){
+        if (bCommON && !m_bWaitStep) {
+            for(TCommReadings::iterator it=cCommunication.begin(); it!=cCommunication.end();++it){
                 /* Find new Parent by looking for minimum range within nodes one level below (level root=0) */
-                if (cCommunication.Level[i]<=(m_sTreeData.Level-1)) {
+                if (it->Level==(m_sTreeData.Level-1)) {
                     if (nCountParent==0) {
-                        nMinIndex=i;
+                        ptrParent=it;
                         ++nCountParent;
                     }
-                    else if(cCommunication.Range[i]<cCommunication.Range[nMinIndex]){
-                        nMinIndex=i;
+                    else if(it->Range<ptrParent->Range){
+                        ptrParent=it;
                     }
                 }
-                if (cCommunication.Range[i]<=PULL_THRESHOLD) {
-                    /* Repulsion forces */
-                    vecAngles.push_back(cCommunication.Angle[i]);
-                    vecRanges.push_back(-0.5*cCommunication.Range[i]);
+                if (it->Range<=PULL_THRESHOLD) {
+                    /* Add repulsion forces */
+                    vecAngles.push_back(it->Angle);
+                    vecRanges.push_back(-1*(it->Range));
                 }
             }
             
             /* Save new Parent-Son node */
-            nParentId=cCommunication.Id[nMinIndex];
+            nParentId=ptrParent->Id;
             m_tParentSonId.push_back(std::make_pair(nParentId,nCurrentId));
             
-            if (cCommunication.Range[nMinIndex]<=STRETCH_THRESHOLD && !cCommunication.Idle[nMinIndex]) {
-                /* Perform worker task*/
+            /* Move if parent within range and not idle */
+            if (ptrParent->Range <=STRETCH_THRESHOLD && !ptrParent->Idle) {
+                /* Add task attraction force */
                 CVector2 temp = VectorToTask(nCurrentId);
                 vecAngles.push_back(temp.Angle());
                 vecRanges.push_back(temp.Length());
                 SetWheelSpeedsFromVector(AdjustmentVector(vecRanges,vecAngles));
-                vecRanges.clear();
-                vecAngles.clear();
                 m_bRobotIdle=false;
-                Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
             }
+            /* Stay idle or create new entity otherwise */
             else{
-                
                 if(!m_sTreeData.AlreadyIdle){
                     /* Stop robot and set to idle*/
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
                     /* Update level (new entity will become parent to one of the parents or to the current robot)*/
                     ++m_sTreeData.Level;
-                    LOG<<"Level:"<<m_sTreeData.Level<<std::endl;
                     /* Create new entity between curent robot and its parent*/
-                    if (cCommunication.Range[nMinIndex]>=STRETCH_THRESHOLD){
-                        m_sTreeData.StretchedRangeAngle=CVector2(cCommunication.Range[nMinIndex],cCommunication.Angle[nMinIndex]);
+                    if (ptrParent->Range >=STRETCH_THRESHOLD){
+                        m_sTreeData.StretchedRangeAngle=CVector2(ptrParent->Range,ptrParent->Angle);
                     }
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
                     m_sTreeData.AlreadyIdle=true;
                 }
                 else {
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
                     m_sTreeData.AlreadyIdle=false;
                 }
             }
         }
-        /* Stay idle if no readings */
+        /* Stop if no readings */
         else {
+            m_pcWheels->SetLinearVelocity(0,0);
             m_bRobotIdle=false;
-            Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+            Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
+            m_bWaitStep=false;
+            //DEBUG(",Time step: %i, robot: %i \n",m_nClock,nCurrentId);
         }
-    
     }
     
+    /* Root Routine */
     else if(m_sTreeData.IsRoot){
-        LOG<<"Root:"<<strRobotId<<std::endl;
         if(m_nClock==1) {
             /* Create n sons around root (n = Number of tasks) */
             m_bStartTree=true;
         }
-        Emit(nCurrentId,false,m_sTreeData.Level);
-        ++m_nClock;
-        //GetSimulationClock() ?
+        else if((m_nClock%20==0) && m_bRefreshDone) {
+            m_bRefreshDone=false;
+            m_nRefreshLayer=1;
+            //LOG<<"Start of refresh"<<std::endl;
+        }
+        Emit(nCurrentId,false,m_sTreeData.Level,0);
+        //++m_nClock;
     }
     
+    /* Other Nodes Routine */
     else {
-        LOG<<"Other:"<<strRobotId<<std::endl;
+        
         std::vector<Real> vecRanges;
         std::vector<CRadians> vecAngles;
-        int nMinIndex=0;
         int nParentId=0;
         int nCountParent=0;
         int nCountSons=0;
+        TCommReadings::iterator ptrParent;
+        
         
         /* Get readings from RAB*/
-        SCommPacket cCommunication=Receive();
-        size_t size=cCommunication.Size; //size needed in CommPacket ?
+        bool bCommON=true;
+        TCommReadings cCommunication=Receive(strRobotId,bCommON);
         
-        if (cCommunication.CommON) {
+        if (bCommON && !m_bWaitStep) {
             
-            /* Get number of Sons */
-            for (size_t i=0; i<size;++i) {
-                if(cCommunication.Level[i]>m_sTreeData.Level){
+            for (TCommReadings::iterator it=cCommunication.begin(); it!=cCommunication.end();++it) {
+                /* Get number of Sons */
+                if(it->Level>m_sTreeData.Level){
                     ++nCountSons;
                 }
             }
-            for(size_t i=0; i<size;++i){
-                if (cCommunication.Range[i]<=PULL_THRESHOLD) {
+            
+            for (TCommReadings::iterator it=cCommunication.begin(); it!=cCommunication.end();++it) {
+            /* Compute forces to sons */
+                if (it->Range<=PULL_THRESHOLD) {
                     /* Repulsion forces */
-                    vecAngles.push_back(cCommunication.Angle[i]);
-                    vecRanges.push_back(-cCommunication.Range[i]);
+                    vecAngles.push_back(it->Angle);
+                    vecRanges.push_back(-(it->Range));
                 }
                 else {
                     /* Attraction forces */
-                    if(cCommunication.Level[i]>m_sTreeData.Level){
+                    if(it->Level>m_sTreeData.Level){
                         /* Add attraction force to Sons */
-                        vecAngles.push_back(cCommunication.Angle[i]);
-                        vecRanges.push_back(cCommunication.Range[i]/nCountSons);
+                        vecAngles.push_back(it->Angle);
+                        if (nCountSons==0) {
+                            DEBUG("No Sons");
+                        }
+                        vecRanges.push_back(it->Range/nCountSons);
                     }
                 }
+                
+            /* Compute forces to parents */
+                
                 /* Find new Parent by looking for minimum range with nodes one level below (level root=0) */
-                if (cCommunication.Level[i]==(m_sTreeData.Level-1)){
+                if (it->Level==(m_sTreeData.Level-1)){
                     if (nCountParent==0) {
-                        nMinIndex=i;
+                        ptrParent=it;
                         ++nCountParent;
                     }
-                    else if(cCommunication.Range[i]<cCommunication.Range[nMinIndex]){
-                        nMinIndex=i;
+                    else if(it->Range<ptrParent->Range){
+                        ptrParent=it;
                     }
                 }
             }
             
             /* Add attraction force to Parent */
-            vecAngles.push_back(cCommunication.Angle[nMinIndex]);
-            vecRanges.push_back(cCommunication.Range[nMinIndex]);
+            vecAngles.push_back(ptrParent->Angle);
+            vecRanges.push_back(ptrParent->Range);
             
             /* Save new Parent-Son node */
-            nParentId=cCommunication.Id[nMinIndex];
+            nParentId=ptrParent->Id;
             m_tParentSonId.push_back(std::make_pair(nParentId,nCurrentId));
             
-            
             /* Motion rule : */
-            if(cCommunication.Range[nMinIndex]<=STRETCH_THRESHOLD && !cCommunication.Idle[nMinIndex]){
+            if(ptrParent->Range<=STRETCH_THRESHOLD && !ptrParent->Idle){
                 m_bRobotIdle=false;
-                Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
                 SetWheelSpeedsFromVector(AdjustmentVector(vecRanges,vecAngles));
                 vecRanges.clear();
                 vecAngles.clear();
@@ -280,26 +299,31 @@ void CFootBotConnectedMotion::ControlStep(){
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
                     ++m_sTreeData.Level;
-                    if (cCommunication.Range[nMinIndex]>=STRETCH_THRESHOLD){
-                        m_sTreeData.StretchedRangeAngle=CVector2(cCommunication.Range[nMinIndex],cCommunication.Angle[nMinIndex]);
+                    if (ptrParent->Range>=STRETCH_THRESHOLD){
+                        m_sTreeData.StretchedRangeAngle=CVector2(ptrParent->Range,ptrParent->Angle);
                     }
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
                     m_sTreeData.AlreadyIdle=true;
                 }
                 else {
                     m_pcWheels->SetLinearVelocity(0,0);
                     m_bRobotIdle=true;
-                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+                    Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
                     m_sTreeData.AlreadyIdle=false;
                 }
             }
             
         }
         else {
+            m_pcWheels->SetLinearVelocity(0,0);
             m_bRobotIdle=false;
-            Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level);
+            Emit(nCurrentId,m_bRobotIdle,m_sTreeData.Level,0);
+            m_bWaitStep=false;
+            DEBUG(",Time step: %i, robot: %i \n",m_nClock,nCurrentId);
         }
     }
+    
+    ++m_nClock;
 }
 
 /****************************************/
@@ -341,18 +365,19 @@ CVector2 CFootBotConnectedMotion::VectorToTask(int n_Id){
 CVector2 CFootBotConnectedMotion::VectorToBlob(CColor c_color) {
     /* Get light readings */
     const CCI_ColoredBlobOmnidirectionalCameraSensor::SReadings& sBlobs = m_pcCamera->GetReadings();
-    /* Calculate a normalized vector that points to the <color> light */
+    /* Calculate a vector that points to the <color> light */
     CVector2 cTemp;
     for(size_t i = 0; i < sBlobs.BlobList.size(); ++i) {
         if (sBlobs.BlobList[i]->Color==c_color) {
             cTemp = CVector2(sBlobs.BlobList[i]->Distance, sBlobs.BlobList[i]->Angle);
         }
     }
-    if(cTemp.Length() > 0.0f) {
-        /* Make the vector long as 1/4 of the max speed */
-        cTemp.Normalize();
-        cTemp *= 0.25f * m_sWheelTurningParams.MaxSpeed;
-    }
+//    if(cTemp.Length() > 0.0f) {
+//        /* Make the vector long as 1/4 of the max speed */
+//        cTemp.Normalize();
+//        cTemp *= 0.25f * m_sWheelTurningParams.MaxSpeed;
+//    }
+//    cTemp/=100;
     return cTemp;
 }
 
@@ -466,12 +491,12 @@ void CFootBotConnectedMotion::SetWheelSpeedsFromVector(const CVector2& c_heading
 /****************************************/
 /****************************************/
 
-void CFootBotConnectedMotion::Emit(UInt8 un_id, bool b_idle, UInt8 un_level) {
+void CFootBotConnectedMotion::Emit(UInt8 un_id, bool b_idle, UInt8 un_level,UInt8 un_NextLevel) {
     CByteArray cBuffer;
     cBuffer << un_id;
     cBuffer << static_cast<UInt8>(b_idle);
     cBuffer << un_level;
-    cBuffer << static_cast<UInt8>(0);
+    cBuffer << un_NextLevel;
     cBuffer << static_cast<UInt16>(0);
     cBuffer << static_cast<UInt16>(0);
     cBuffer << static_cast<UInt16>(0);
@@ -481,25 +506,42 @@ void CFootBotConnectedMotion::Emit(UInt8 un_id, bool b_idle, UInt8 un_level) {
 /****************************************/
 /****************************************/
 
-CFootBotConnectedMotion::SCommPacket CFootBotConnectedMotion::Receive() {
+CFootBotConnectedMotion::TCommReadings CFootBotConnectedMotion::Receive(const std::string& str_RobotId, bool& CommON) {
+    
+    int nCurrentId = FromString<int>(str_RobotId.substr(2));
     
     const CCI_RangeAndBearingSensor::TReadings& tReadings=m_pcRABS->GetReadings();
+    TCommReadings tBuffer;
     SCommPacket sBuffer;
+    CommON=true;
+    
     for(size_t i=0; i<tReadings.size();++i){
         CByteArray cTemp;
         cTemp=tReadings[i].Data;
-        sBuffer.Size=tReadings.size();
-        sBuffer.Id[i]=(cTemp.ToCArray()[0]);//reinterpret_cast<UInt16*>(cTemp.ToCArray()[0]);
-        sBuffer.Idle[i]=(cTemp.ToCArray()[1]);//reinterpret_cast<UInt8*>(cTemp.ToCArray()[1]);
-        sBuffer.Level[i]=(cTemp.ToCArray()[2]);//reinterpret_cast<UInt8*>(cTemp.ToCArray()[2]);
-        sBuffer.Range[i]=tReadings[i].Range;
-        sBuffer.Angle[i]=tReadings[i].HorizontalBearing;
+        sBuffer.Id=(cTemp.ToCArray()[0]);//reinterpret_cast<UInt16*>(cTemp.ToCArray()[0]);
+        sBuffer.Idle=(cTemp.ToCArray()[1]);//reinterpret_cast<UInt8*>(cTemp.ToCArray()[1]);
+        sBuffer.Level=(cTemp.ToCArray()[2]);//reinterpret_cast<UInt16*>(cTemp.ToCArray()[2]);
+        sBuffer.NextLevel=(cTemp.ToCArray()[3]);
+        sBuffer.Range=tReadings[i].Range;
+        sBuffer.Angle=tReadings[i].HorizontalBearing;
+        
+        if (sBuffer.Id==0 && !sBuffer.Idle && sBuffer.Level==0 && tReadings.size()==1) {
+            CommON=false;
+        }
+        
+        /* Workaround for aberrant measurements*/ //still needed ?
+        if (sBuffer.Range>0.1) {
+        tBuffer.push_back(sBuffer);
+        }
+
+        //LOG<<nCurrentId<<'\t'<<sBuffer.Id<<'\t'<<sBuffer.Level<<'\t'<<sBuffer.Range<<'\t'<<sBuffer.Angle<<std::endl;
+        //if (sBuffer.Id==0 && !sBuffer.Idle && sBuffer.Level==0) {
+                //DEBUG("Buffer: current fb %u Id %u Level %u Range %f Angle %f \n",nCurrentId,sBuffer.Id[i],sBuffer.Level[i],sBuffer.Range[i]);//sBuffer.Angle[i]);
+        //        LOG<<nCurrentId<<'\t'<<sBuffer.Id<<'\t'<<sBuffer.Level<<'\t'<<sBuffer.Range<<'\t'<<sBuffer.Angle<<std::endl;
+        //}
+        
     }
-    sBuffer.CommON=true;
-    if (sBuffer.Id[0]==0 && !sBuffer.Idle[0] && sBuffer.Level[0]==0) {
-        sBuffer.CommON=false;
-    }
-    return sBuffer;
+    return tBuffer;
 }
 
 /****************************************/
